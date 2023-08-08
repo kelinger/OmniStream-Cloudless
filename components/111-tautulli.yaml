@@ -1,0 +1,35 @@
+#
+# Tautulli - Reports on Plex stats
+#
+  tautulli:
+    image: lscr.io/linuxserver/tautulli
+    container_name: ${TAUTULLINAME}
+    hostname: ${TAUTULLINAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+    labels:
+      - "omni=${TAUTULLINAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.tautulli.rule=Host(`${TAUTULLINAME}.${MYDOMAIN}`)
+      - traefik.http.routers.tautulli.tls=true
+      - traefik.http.routers.tautulli.tls.certresolver=lets-encrypt
+      - traefik.http.services.tautulli.loadbalancer.server.port=8181
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIGS}/${TAUTULLINAME}:/config
+      - ${CONFIGS}/${PLEXNAME}/Library/Application Support/Plex Media Server/Logs:/logs:ro
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :8181"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

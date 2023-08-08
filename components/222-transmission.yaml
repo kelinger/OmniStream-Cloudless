@@ -1,0 +1,41 @@
+#
+# Deluge - Torrent download engine
+#
+  transmission:
+    image: lscr.io/linuxserver/transmission
+    container_name: ${TRANSNAME}
+    hostname: ${TRANSNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+      - UMASK_SET=022
+    volumes:
+      - ${CONFIGS}/${TRANSNAME}:/config
+      - ${MERGEMOUNT}:/cloud
+    labels:
+      - "omni=${TRANSNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.transmission.rule=Host(`${TRANSNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.transmission.tls=true
+      - traefik.http.routers.transmission.tls.certresolver=lets-encrypt
+      - traefik.http.services.transmission.loadbalancer.server.port=9091
+    ports:
+      - 55955:55955/tcp
+      - 55955:55955/udp
+      - 9091:9091
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :9091 && test -f /cloud"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

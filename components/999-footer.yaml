@@ -1,0 +1,5 @@
+networks:
+  OmniNet:
+    name: OmniNet
+  default:
+    driver: bridge

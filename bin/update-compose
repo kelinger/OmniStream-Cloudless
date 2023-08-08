@@ -1,0 +1,31 @@
+#!/bin/bash
+
+echo -n Updating Docker Compose...
+X=$(docker-compose -v)
+cd /tmp
+curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+while [[ ${?} -ne 0 ]]
+do
+	echo -n failed...waiting...
+	sleep 15
+	echo -n retrying...
+	curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+done
+
+if [[ ${?} = 0 ]]
+then
+	chmod +x docker-compose-linux-x86_64
+	Y=$(./docker-compose-linux-x86_64 -v)
+	if [[ ${X} = ${Y} ]];
+	then
+		rm docker-compose-linux-x86_64
+		echo No update necessary
+	else
+		sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+		echo Updated - ${Y}
+	fi
+else
+	echo Failed!
+	exit 14
+fi
+

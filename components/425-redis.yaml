@@ -1,0 +1,50 @@
+  redis:
+    image: redis:latest
+    container_name: ${REDISNAME}
+    hostname: ${REDISNAME}
+    restart: always
+    networks:
+      - OmniNet
+    ports:
+      - "6379:6379"
+    volumes:
+      - ${CONFIGS}/${REDISNAME}:/data
+      - /etc/localtime:/etc/localtime:ro
+      - /bin/netstat:/bin/netstat:ro
+    labels:
+      - "omni=${REDISNAME},${MYDOMAIN},no,no,no"
+      - autoheal=true
+      - traefik.enable=false
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :6379"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ${REDISCOMNAME}
+    hostname: ${REDISCOMNAME}
+    domainname: ${MYDOMAIN}
+    restart: always
+    depends_on:
+      traefik:
+        condition: service_healthy
+    networks:
+      - OmniNet
+    environment:
+    - REDIS_HOSTS=local:${REDISNAME}:6379
+    labels:
+      - "omni=${REDISCOMNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.rediscom.rule=Host(`${REDISCOMNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.rediscom.tls=true
+      - traefik.http.routers.rediscom.tls.certresolver=lets-encrypt
+      - traefik.http.services.rediscom.loadbalancer.server.port=8081
+      - traefik.http.routers.rediscom.middlewares=oauth
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :8081"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

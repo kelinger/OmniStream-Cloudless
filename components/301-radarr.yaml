@@ -1,0 +1,41 @@
+#
+# Radarr - Movie catalog and management
+#
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: ${RADARRNAME}
+    hostname: ${RADARRNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PGID=${GROUPID}
+      - PUID=${USERID}
+      - TZ=${TIMEZONE}
+      - MEDIA=${MEDIA}
+    labels:
+      - "omni=${RADARRNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.radarr.rule=Host(`${RADARRNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.radarr.tls=true
+      - traefik.http.routers.radarr.tls.certresolver=lets-encrypt
+      - traefik.http.services.radarr.loadbalancer.server.port=7878
+      - traefik.http.routers.radarr.middlewares=${AUTH}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIGS}/${RADARRNAME}:/config
+      - ${LOGS}:/config/logs
+      - ${MERGEMOUNT}:/cloud
+      - ${OMNIHOME}/healthchecks/radarrcheck:/radarrcheck
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD", "/radarrcheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

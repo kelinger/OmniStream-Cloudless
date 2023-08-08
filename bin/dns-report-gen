@@ -1,0 +1,53 @@
+#!/bin/bash
+
+source ~/.config/omnistream.conf
+
+OMNIHOME=${HOME}/OmniStream
+REPORT=${OMNIHOME}/dns-report
+#IP="$(dig +short myip.opendns.com @resolver1.opendns.com)"
+IP=$(dig +short txt ch whoami.cloudflare @1.0.0.1 | tr -d '"')
+
+for i in components enabled; do
+	cd ${OMNIHOME}/$i
+	for LINE in $(cat *.yaml |grep "omni=" |cut -f2 -d'"' | cut -f2 -d'='); do
+		HOST=$(echo ${LINE} | cut -f1 -d',')
+		if [[ "${HOST:0:1}" == "$" ]]; then
+			HOST=$(echo $(eval echo ${HOST}))
+		fi
+		DOMAIN=$(echo ${LINE} | cut -f2 -d',')
+		if [[ "${DOMAIN:0:1}" == "$" ]]; then
+			DOMAIN=$(echo $(eval echo ${DOMAIN}))
+		fi
+		ADD=$(echo ${LINE} | cut -f3 -d',')
+		ADD="${ADD^^}"
+		DEL=$(echo ${LINE} | cut -f4 -d',')
+		DEL="${DEL^^}"
+		CACHE=$(echo ${LINE} | cut -f5 -d',')
+		CACHE="${CACHE^^}"
+		CACHE2=unproxied
+		if [[ ${CACHE} = "YES" ]]
+		then
+			CACHE2=proxied
+		fi
+		FQDN=${HOST}.${DOMAIN}
+		if [[ ${ADD} == "YES" ]]; then
+			echo "${FQDN},A,${IP},${CACHE2}" >> /tmp/dns-$i
+		fi
+	done
+done
+sort -u -o /tmp/dns-enabled /tmp/dns-enabled > /dev/null 2>&1
+sort -u -o /tmp/dns-components /tmp/dns-components > /dev/null 2>&1
+echo "
+The following domain names are needed for your current setup.  Please make sure they
+are created at your DNS host before starting OmniStream.
+------------------------------------------------------------------------------------------
+" > ${REPORT}
+cat /tmp/dns-enabled 2>/dev/null | sed 's/\t/,|,/g' | column -s ',' -t >> ${REPORT}
+
+echo "
+The following domain names are not used in your current setup and do not need DNS
+entries.  However, you may want to create entries for those you plan on using later.
+------------------------------------------------------------------------------------------
+" >> ${REPORT}
+diff --new-line-format="" --unchanged-line-format="" /tmp/dns-components /tmp/dns-enabled 2>/dev/null | sed 's/\t/,|,/g' | column -s ',' -t >> ${REPORT}
+rm /tmp/dns-components /tmp/dns-enabled > /dev/null 2>&1

@@ -1,0 +1,54 @@
+#!/bin/bash
+
+source ~/.config/omnistream.conf
+source ${OMNIHOME}/bin/dns_functions
+
+
+######################################################
+#	Main Program
+######################################################
+
+if [[ ${DELETE_DNS} == false ]]; then
+	echo DNS deletion is disabled.  No action performed.
+	exit 0
+fi
+
+${OMNIHOME}/bin/dns-report-gen
+NAMES=$(cat ~/OmniStream/enabled/* |grep hostname| sed 's/.*://' | sed 's/\..*$//')
+NAMES=$(eval echo ${NAMES})
+
+#	Step through each component that uses a subdomain through Traefik proxy
+cd ${OMNIHOME}/enabled
+for LINE in $(cat *.yaml |grep "omni=" |cut -f2 -d'"' | cut -f2 -d'='); do
+	HOST=$(echo ${LINE} | cut -f1 -d',')
+	if [[ "${HOST:0:1}" == "$" ]]; then
+		HOST=$(echo $(eval echo ${HOST}))
+	fi
+	DOMAIN=$(echo ${LINE} | cut -f2 -d',')
+	if [[ "${DOMAIN:0:1}" == "$" ]]; then
+		DOMAIN=$(echo $(eval echo ${DOMAIN}))
+	fi
+	ADD=$(echo ${LINE} | cut -f3 -d',')
+	ADD="${ADD^^}"
+	DEL=$(echo ${LINE} | cut -f4 -d',')
+	DEL="${DEL^^}"
+	CACHE=$(echo ${LINE} | cut -f5 -d',')
+	CACHE="${CACHE^^}"
+	FQDN=${HOST}.${MYDOMAIN}
+	RECORD=$(echo $ZONEDUMP | jq -r --arg FQDN "$FQDN" 'select(.name==$FQDN)')
+	RECORDID=$(echo $RECORD | jq '.id' |tr -d '"')
+	echo -n ${BLUE}
+	printf %-20s "${HOST}"
+	if [[ ${DEL} = "YES" ]]
+	then
+		if [[ -z ${RECORDID} ]]
+		then
+			echo ${YELLOW}"not registered"${STD}
+		else
+			deleterecord ${ZONEID} ${RECORDID}
+			echo ${GREEN}"Removed record ${RECORDID}"${STD}
+		fi
+	else
+		echo ${YELLOW}"skipped"${STD}
+	fi
+done

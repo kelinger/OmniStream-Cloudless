@@ -1,0 +1,236 @@
+#!/bin/bash
+
+# Make sure the dialog command is installed
+hash dialog 2>/dev/null || { echo Installing dialog \(one time\) ; sudo apt update > /dev/null ; sudo apt install dialog -y > /dev/null ; }
+
+# These are default values for required parameters.  Do not change here in this
+# script.  They are overwritten by the values stored in the user's config (ENV).
+
+HOME=~
+OMNIHOME=${HOME}/OmniStream
+CDIR=${HOME}/.config
+ENV=${CDIR}/omnistream.conf
+CONFIGS=${HOME}/OmniStream/configs
+DOWNLOADS=${HOME}/OmniStream/mnt/cloud/Downloads
+LOGS=${OMNIHOME}/logs
+ADD_DNS=false
+DELETE_DNS=false
+TEMP=/tmp/answer${$}
+DIFFBAK="emby jellyfin plex"
+AUTH=auth@docker
+CF_CACHE=true
+
+touch ${ENV}
+
+# Set default variables; will be superceded by ENV file
+
+APACHENAME=apache
+BAZARRNAME=bazarr
+DELUGENAME=deluge
+EMBYNAME=emby
+EMBYSTATNAME=embystat
+HEALNAME=autoheal
+HEIMDALLNAME=heimdall
+HYDRANAME=hydra
+JACKETTNAME=jackett
+JELLYNAME=jellyfin
+LIDARRNAME=lidarr
+MARIADBNAME=mariadb
+MEDIA=${HOME}/OmniStream/mnt/cloud/Media
+MEDUSANAME=medusa
+MENU=www
+MERGEMOUNT=${HOME}/OmniStream/mnt/cloud
+MONITORRNAME=monitorr
+MYSQLNAME=mysql
+NETDATANAME=netdata
+NEXTCLOUDNAME=nextcloud
+NZBGETNAME=nzbget
+OAUTHNAME=oauth
+OAUTHID=none
+OAUTHSECRET=none
+OAUTHSUPERSECRET=$(openssl rand -hex 16)
+OMBINAME=ombi
+ORGANIZRNAME=organizr
+OVPNNAME=ovpn
+PLEXCLAIM=
+PLEXNAME=plex
+PORTAINERNAME=portainer
+POSTGRESNAME=postgres
+PROWLARRNAME=prowlarr
+QBITNAME=qbit
+RADARRNAME=radarr
+REDISCOMNAME=redis-commander
+REDISNAME=redis
+RTORRENTNAME=rtorrent
+SABNZBDNAME=sabnzbd
+SONARRNAME=sonarr
+SPEEDNAME=speed
+SQLSERVERNAME=sqlserver
+TAUTULLINAME=tautulli
+TRAEFIKNAME=traefik
+TRANSNAME=transmission
+TURBOMAX=20
+UNSYNCED=${HOME}/OmniStream/mnt/unsynced
+UPLOADCACHE=${HOME}/OmniStream/mnt/uploadcache
+USEOAUTH=false
+WATCHNAME=watchtower
+
+# Since Docker processes " as part of the paths, we don't actually store it in the variables.  However, BASH does require
+#	the " if the string is going to have odd characters.  As a result, we have to load the existing environment line
+#	by line and insert the " around the values.
+
+# Load existing variables and use them as defaults, if available
+
+while IFS='' read -r line || [[ -n "${line}" ]]; do
+	#newline=$(echo ${line} | sed 's/=/&\"/g; s/:$//')\"
+	newline=$line
+	eval ${newline} >/dev/null 2>&1
+done <${ENV}
+
+[[ -z ${OAUTHUSER} ]] && OAUTHUSER=${MYEMAIL,,}
+
+get_text() {
+        dialog --title "${TITLE}" --clear --no-cancel --inputbox "${DESC}" 16 51 "${DEFAULT}" 2> ${TEMP}-Input
+        VALUE=$(cat ${TEMP}-Input)
+        rm ${TEMP}-Input
+}
+
+if [[ ${1,,} != "rebuild" ]]; then
+	TITLE="Personal Domain"
+	DESC="Enter the domain name you wish to use with OmniStream."
+	DEFAULT="${MYDOMAIN}"
+	get_text
+	MYDOMAIN="${VALUE}"
+	TITLE="Personal Email"
+	DESC="Enter the email address you wish to use for the Let's Encrypt SSL certificate."
+	DEFAULT="${MYEMAIL}"
+	get_text
+	MYEMAIL="${VALUE}"
+	clear
+fi
+
+cat >${ENV} <<EOF
+
+############################
+#  Environment valriables  #
+#     for OmniStream       #
+############################
+
+ADD_DNS=${ADD_DNS}
+CF_CACHE=${CF_CACHE}
+CF_EMAIL=${CF_EMAIL}
+CF_KEY=${CF_KEY}
+CONFIGS=${CONFIGS}
+DELETE_DNS=${DELETE_DNS}
+DOWNLOADS=${DOWNLOADS}
+GPUGIDS=$(getent group video | cut -d: -f3),$(getent group render | cut -d: -f3)
+GROUPID=$(id -g)
+HOME=${HOME}
+LOGS=${LOGS}
+MYDOMAIN=${MYDOMAIN}
+MYEMAIL=${MYEMAIL}
+TIMEZONE=$(cat /etc/timezone)
+USERID=$(id -u)
+DIFFBAK="${DIFFBAK}"
+TURBOMAX=${TURBOMAX}
+AUTH=${AUTH}
+
+############################
+#     Mount Variables      #
+############################
+
+MERGEMOUNT=${MERGEMOUNT}
+RCLONEHOME=${HOME}/.config/rclone
+RCLONESERVICE=${RCLONESERVICE}
+RCLONEMOUNT=${RCLONEMOUNT}
+UNSYNCED=${UNSYNCED}
+UPLOADCACHE=${UPLOADCACHE}
+MEDIA=${MEDIA}
+
+############################
+#   Container/Host names   #
+#     for OmniStream       #
+#   Most people will not   #
+# need to change anything. #
+############################
+
+APACHENAME=${APACHENAME}
+BAZARRNAME=${BAZARRNAME}
+DELUGENAME=${DELUGENAME}
+EMBYNAME=${EMBYNAME}
+EMBYSTATNAME=${EMBYSTATNAME}
+HEALNAME=${HEALNAME}
+HEIMDALLNAME=${HEIMDALLNAME}
+HYDRANAME=${HYDRANAME}
+JACKETTNAME=${JACKETTNAME}
+JELLYNAME=${JELLYNAME}
+LIDARRNAME=${LIDARRNAME}
+MARIADBNAME=${MARIADBNAME}
+MEDUSANAME=${MEDUSANAME}
+MENU=${MENU}
+MONITORRNAME=${MONITORRNAME}
+MYSQLNAME=${MYSQLNAME}
+NETDATANAME=${NETDATANAME}
+NEXTCLOUDNAME=${NEXTCLOUDNAME}
+NZBGETNAME=${NZBGETNAME}
+OAUTHNAME=${OAUTHNAME}
+OAUTHID=${OAUTHID}
+OAUTHSECRET=${OAUTHSECRET}
+OAUTHSUPERSECRET=${OAUTHSUPERSECRET}
+OAUTHUSER=${OAUTHUSER,,}
+OMBINAME=${OMBINAME}
+OMNIHOME=${OMNIHOME}
+ORGANIZRNAME=${ORGANIZRNAME}
+OVPNNAME=${OVPNNAME}
+PLEXCLAIM=${PLEXCLAIM}
+PLEXNAME=${PLEXNAME}
+PORTAINERNAME=${PORTAINERNAME}
+POSTGRESNAME=${POSTGRESNAME}
+PROWLARRNAME=${PROWLARRNAME}
+QBITNAME=${QBITNAME}
+RADARRNAME=${RADARRNAME}
+REDISCOMNAME=${REDISCOMNAME}
+REDISNAME=${REDISNAME}
+RTORRENTNAME=${RTORRENTNAME}
+SABNZBDNAME=${SABNZBDNAME}
+SONARRNAME=${SONARRNAME}
+SPEEDNAME=${SPEEDNAME}
+SQLSERVERNAME=${SQLSERVERNAME}
+TAUTULLINAME=${TAUTULLINAME}
+TRAEFIKNAME=${TRAEFIKNAME}
+TRANSNAME=${TRANSNAME}
+USEOAUTH=${USEOAUTH}
+WATCHNAME=${WATCHNAME}
+
+############################
+#     Color Variables      #
+############################
+
+STD="$(echo -en '\033[0m')"
+RED="$(echo -en '\033[00;31m')"
+GREEN="$(echo -en '\033[00;32m')"
+YELLOW="$(echo -en '\033[00;33m')"
+BLUE="$(echo -en '\033[00;34m')"
+MAGENTA="$(echo -en '\033[00;35m')"
+PURPLE="$(echo -en '\033[00;35m')"
+CYAN="$(echo -en '\033[00;36m')"
+LGRAY="$(echo -en '\033[00;37m')"
+LRED="$(echo -en '\033[01;31m')"
+LGREEN="$(echo -en '\033[01;32m')"
+LYELLOW="$(echo -en '\033[01;33m')"
+LBLUE="$(echo -en '\033[01;34m')"
+LMAGENTA="$(echo -en '\033[01;35m')"
+LPURPLE="$(echo -en '\033[01;35m')"
+LCYAN="$(echo -en '\033[01;36m')"
+WHITE="$(echo -en '\033[01;37m')"
+
+EOF
+
+ln -sf ${ENV} ${OMNIHOME}/.env
+
+cat ${OMNIHOME}/enabled/???-* >${OMNIHOME}/docker-compose.yaml
+mkdir -p ${CONFIGS} ${DOWNLOADS} ${LOGS}
+sudo cp ${RCLONEHOME}/rclone.conf ${CONFIGS}/omnimount/
+sudo chown ${USERID}:${GROUPID} ${CONFIGS}/omnimount/rclone.conf
+
+echo Environment updated

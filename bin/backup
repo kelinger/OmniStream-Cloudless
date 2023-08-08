@@ -1,0 +1,99 @@
+#!/bin/bash
+if pidof -o %PPID -x "$(basename $0)"; then
+	echo Already running!
+	exit 1
+fi
+
+source ~/.config/omnistream.conf
+
+# Call backup-start plugin, if it exists
+[[ -f ${OMNIHOME}/plugins/backup-start ]] && source ${OMNIHOME}/plugins/backup-start
+
+SERVER=$(hostname)
+SERVER=${SERVER,,}
+APILOG="${LOGS}/api.log"
+OMNIHOME="${HOME}/OmniStream"
+
+# Make sure there's a place to store backup index for full versus differential
+mkdir -p ${OMNIHOME}/snapshots
+
+rmove() {
+	# This function handles moving a file from the local storage to cloud.
+	SOURCE=${1}
+	TARGET=${2}
+	echo "${TARGET}"
+	mkdir -p $(dirname ${MERGEMOUNT}${TARGET})
+	mv ${SOURCE} ${MERGEMOUNT}${TARGET}
+}
+
+cd ${HOME}
+echo Creating backup
+crontab -l > ${HOME}/cron
+
+# Create the server's home backup.  Some files specified may not exist.
+
+echo -n "/tmp/${SERVER}-backup.tar.gz --> "
+sudo tar -czpf /tmp/${SERVER}-backup.tar.gz \
+       --exclude=.cache \
+       --exclude=.iterm* \
+       --exclude=thinclient_drives \
+       --exclude=${HOME}/downloads \
+       --exclude=${HOME}/Downloads \
+       --exclude=${OMNIHOME}/mnt/* \
+       --exclude=${OMNIHOME}/logs/* \
+       --exclude=${OMNIHOME}/Logs/* \
+       --exclude=${CONFIGS} \
+       --exclude=${OMNIHOME}/snapshots \
+       ${HOME} > /dev/null 2>&1
+sudo chown ${USERID}:${GROUPID} /tmp/${SERVER}-*.tar.gz
+rmove "/tmp/${SERVER}-backup.tar.gz" "/Backups/${SERVER}/${SERVER}-backup.tar.gz"
+rm ${HOME}/cron
+
+cd ${CONFIGS}
+
+FILES="${CONFIGS}/"*
+# Loop through each filename / directory name in the Configs directory
+for f in ${FILES}
+do
+	FILENAME="$(basename "${f}")"
+	[[ ${DIFFBAK} =~ (^|[[:space:]])${FILENAME}($|[[:space:]]) ]] && DIFF=1 || DIFF=0
+	[[ -f "${f}" ]] && FILE=1 || FILE=0
+	[[ -f "${OMNIHOME}/snapshots/${FILENAME}.snar" ]] && SNAR=1 || SNAR=0
+	echo -n "${FILENAME} --> "
+	if [[ ${FILE} = 1 ]]
+	then
+		cp "${f}" /tmp/
+		rmove "/tmp/${FILENAME}" "/Backups/${SERVER}/$(basename ${CONFIGS})/${FILENAME}"
+	else
+		if [[ ${DIFF} = 1 ]]
+		then
+			if [[ ${SNAR} = 1 ]]
+			then
+				cp "${OMNIHOME}/snapshots/${FILENAME}.snar" "${OMNIHOME}/snapshots/${FILENAME}.bak"
+				BACKUPNAME="${FILENAME}-diff"
+			else
+				BACKUPNAME="${FILENAME}-full"
+				# Remove previous DIFF, if it exists
+				rm ${MERGEMOUNT}"/Backups/${SERVER}/$(basename ${CONFIGS})/${FILENAME}-diff.tar.gz" > /dev/null 2>&1
+			fi
+		else
+			BACKUPNAME="${FILENAME}-full"
+			# Remove previous SNAR, if it exists
+			rm "${OMNIHOME}/snapshots/${FILENAME}.snar" > /dev/null 2>&1
+			# Remove previous DIFF, if it exists
+			rm ${MERGEMOUNT}"/Backups/${SERVER}/$(basename ${CONFIGS})/${FILENAME}-diff.tar.gz" > /dev/null 2>&1
+		fi
+		sudo tar -cpf "/tmp/${BACKUPNAME}.tar.gz" \
+			--listed-incremental "${OMNIHOME}/snapshots/${FILENAME}.snar" \
+			--use-compress-program=pigz \
+			--exclude=.cache \
+			"${FILENAME}" > /dev/null 2>&1
+		sudo chown ${USERID}:${GROUPID} "/tmp/${BACKUPNAME}.tar.gz" "${OMNIHOME}/snapshots/${FILENAME}.snar"
+		[[ ${SNAR} = 1 ]] && mv "${OMNIHOME}/snapshots/${FILENAME}.bak" "${OMNIHOME}/snapshots/${FILENAME}.snar"
+		[[ ${DIFF} = 0 ]] && rm "${OMNIHOME}/snapshots/${FILENAME}.snar"
+		rmove "/tmp/${BACKUPNAME}.tar.gz" "/Backups/${SERVER}/$(basename ${CONFIGS})/${BACKUPNAME}.tar.gz"
+	fi
+done
+
+# Call backup-end plugin, if it exists
+[[ -f ${OMNIHOME}/plugins/backup-end ]] && source ${OMNIHOME}/plugins/backup-end

@@ -1,0 +1,39 @@
+#
+# Lidarr - Music catalog and management
+#
+  lidarr:
+    image: lscr.io/linuxserver/lidarr
+    container_name: ${LIDARRNAME}
+    hostname: ${LIDARRNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PGID=${GROUPID}
+      - PUID=${USERID}
+      - TZ=${TIMEZONE}
+    volumes:
+      - ${CONFIGS}/${LIDARRNAME}:/config
+      - ${LOGS}:/config/logs
+      - ${MERGEMOUNT}:/cloud
+      - ${OMNIHOME}/healthchecks/lidarrcheck:/lidarrcheck
+    labels:
+      - "omni=${LIDARRNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.lidarr.rule=Host(`${LIDARRNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.lidarr.tls=true
+      - traefik.http.routers.lidarr.tls.certresolver=lets-encrypt
+      - traefik.http.services.lidarr.loadbalancer.server.port=8686
+      - traefik.http.routers.lidarr.middlewares=${AUTH}
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD", "/lidarrcheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

@@ -1,0 +1,33 @@
+#
+# Apache:  Powerful web server
+#
+  apache:
+    image: php:apache
+    container_name: ${APACHENAME}
+    hostname: ${APACHENAME}
+    domainname: ${MYDOMAIN}
+    restart: always
+    depends_on:
+      traefik:
+        condition: service_healthy
+    networks:
+      - OmniNet
+    volumes:
+      - ${CONFIGS}/${APACHENAME}:/var/www/html
+      - /etc/localtime:/etc/localtime:ro
+      - /bin/netstat:/bin/netstat:ro
+    labels:
+      - "omni=${APACHENAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.apache.rule=Host(`${APACHENAME}.${MYDOMAIN}`)
+      - traefik.http.routers.apache.tls=true
+      - traefik.http.routers.apache.tls.certresolver=lets-encrypt
+      - traefik.http.services.apache.loadbalancer.server.port=80
+     #- traefik.http.routers.apache.middlewares=${AUTH}
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :80"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+

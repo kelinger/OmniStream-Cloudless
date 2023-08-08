@@ -1,0 +1,47 @@
+#
+# NetData - System monitoring and graphs
+#
+  netdata:
+    image: netdata/netdata
+    container_name: ${NETDATANAME}
+    hostname: ${NETDATANAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    environment:
+      - PGID=998
+      - TZ=${TIMEZONE}
+      - DOCKER_USR=${USER}
+    labels:
+      - "omni=${NETDATANAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.netdata.rule=Host(`${NETDATANAME}.${MYDOMAIN}`)
+      - traefik.http.routers.netdata.tls=true
+      - traefik.http.routers.netdata.tls.certresolver=lets-encrypt
+      - traefik.http.services.netdata.loadbalancer.server.port=19999
+      - traefik.http.routers.netdata.middlewares=${AUTH}
+    volumes:
+      - ${CONFIGS}/${NETDATANAME}/config:/etc/netdata
+      - ${CONFIGS}/${NETDATANAME}/lib:/var/lib/netdata
+      - ${CONFIGS}/${NETDATANAME}/cache:/var/cache/netdata
+      - /etc/passwd:/host/etc/passwd:ro
+      - /etc/group:/host/etc/group:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - OmniNet
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - apparmor:unconfined
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :19999"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

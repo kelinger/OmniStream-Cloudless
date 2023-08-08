@@ -1,0 +1,49 @@
+#
+# Deluge - Torrent download engine
+#
+  deluge:
+    image: lscr.io/linuxserver/deluge #145
+    container_name: ${DELUGENAME}
+    hostname: ${DELUGENAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+      - UMASK_SET=022
+      - MEDIA=${MEDIA}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIGS}/${DELUGENAME}:/config
+      - ${LOGS}/deluged.log:/config/deluged.log
+      - ${LOGS}:/logs
+      - ${DOWNLOADS}:/downloads
+      - ${MERGEMOUNT}:/cloud
+      - ${OMNIHOME}/healthchecks/delugecheck:/delugecheck
+    ports:
+      - 55956:55956/tcp
+      - 55956:55956/udp
+      - 55957:55957/tcp
+      - 55957:55957/udp
+      - 58846:58846/tcp
+    networks:
+      - OmniNet
+    labels:
+      - "omni=${DELUGENAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.deluge.rule=Host(`${DELUGENAME}.${MYDOMAIN}`)
+      - traefik.http.routers.deluge.tls=true
+      - traefik.http.routers.deluge.tls.certresolver=lets-encrypt
+      - traefik.http.services.deluge.loadbalancer.server.port=8112
+    healthcheck:
+      test: ["CMD-SHELL", "/delugecheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

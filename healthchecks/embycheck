@@ -1,0 +1,37 @@
+#!/bin/sh
+
+APP=Emby
+PORT=8096
+MOUNT="/Media"
+LOG="/config/logs/health"
+NS=$(which netstat)
+
+if [[ ${?} -ne 0 ]];
+then
+	# No netstat so install it and create new log file
+	echo $(date) - ${APP} - Installing net-tools >> ${LOG}
+	apt update
+	apt install net-tools -y
+fi
+
+${NS} -ntlp | grep :${PORT}
+if [[ ${?} -ne  0 ]];
+then
+	echo $(date) - ${APP} service not running >> ${LOG}
+	exit 1			# Port not open
+fi
+
+mountpoint ${MOUNT}
+if [[ ${?} -ne  0 ]];
+then
+	echo $(date) - ${APP} - OmniMount missing >> ${LOG}
+	exit 2			# Rclone mount failed
+fi
+
+if ! [[ -f ${MOUNT}/omnimounted ]];
+then
+	echo $(date) - ${APP} - Media failure >> ${LOG}
+	exit 3			# External mapping present but no cloud
+fi
+
+exit 0

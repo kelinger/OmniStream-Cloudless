@@ -1,0 +1,38 @@
+#
+# Jackett - Download proxy server
+#
+  jackett:
+    image: lscr.io/linuxserver/jackett
+    container_name: ${JACKETTNAME}
+    hostname: ${JACKETTNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+      - AUTO_UPDATE=true
+      - UMASK_SET=022
+    volumes:
+      - ${CONFIGS}/${JACKETTNAME}:/config
+      - ${LOGS}:/config/logs
+      - ${OMNIHOME}/healthchecks/jackettcheck:/jackettcheck
+    labels:
+      - "omni=${JACKETTNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.jackett.rule=Host(`${JACKETTNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.jackett.tls=true
+      - traefik.http.routers.jackett.tls.certresolver=lets-encrypt
+      - traefik.http.services.jackett.loadbalancer.server.port=9117
+      - traefik.http.routers.jackett.middlewares=${AUTH}
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "/jackettcheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

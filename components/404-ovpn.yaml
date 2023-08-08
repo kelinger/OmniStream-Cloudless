@@ -1,0 +1,39 @@
+#
+# OpenVPN-AS:  VPN server to allow tunnels to Docker from anywhere
+#
+  openvpn-as:
+    image: ghcr.io/linuxserver/openvpn-as
+    container_name: ${OVPNNAME}
+    hostname: ${OVPNNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 9443:9443
+      - 1194:1194/udp
+    networks:
+      - OmniNet
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+      - INTERFACE=eth0
+    labels:
+      - "omni=${OVPNNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.ovpn.rule=Host(`${OVPNNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.ovpn.tls=true
+      - traefik.http.routers.ovpn.tls.certresolver=lets-encrypt
+      - traefik.http.services.ovpn.loadbalancer.server.port=943
+    volumes:
+      - ${CONFIGS}/${OVPNNAME}:/config
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :943"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

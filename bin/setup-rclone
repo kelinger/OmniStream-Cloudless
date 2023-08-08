@@ -1,0 +1,109 @@
+#!/bin/bash
+
+source ~/.config/omnistream.conf
+source ~/.selected_editor
+
+TEMP=/tmp/answer${$}
+
+get_text() {
+        dialog --title "${TITLE}" --clear --no-cancel --inputbox "${DESC}" 16 51 "${DEFAULT}" 2> ${TEMP}-Input
+        VALUE=$(cat ${TEMP}-Input)
+        rm ${TEMP}-Input
+}
+
+yesno() {
+        dialog --title "${TITLE}" --clear --yesno "${DESC}" 16 51
+        VALUE=${?}
+}
+
+msgbox() {
+	dialog --title "${TITLE}" --clear --msgbox "${DESC}" 0 0
+	VALUE=${?}
+}
+
+quit() {
+	clear
+	echo Rclone setup canceled.  No files have been changed.  To restart rclone setup, run \"setup-rclone\" from the shell.
+	echo
+	exit
+}
+
+TITLE="Rclone Configuration"
+DESC="Would you like to run the \"rclone config\" process to setup a new rclone configuration for our cloud storage services?  Select YES to launch this process.
+
+Select NO to open your editor in order to paste a configuration into a new file."
+yesno
+if [[ ${VALUE} = 255 ]]
+then
+	quit
+elif [[ ${VALUE} = 1 ]]
+then
+	TITLE="Instructions"
+	DESC="After clicking OK, you may paste your rclone.conf in plain-text from your computer.  Simply open a copy of a valid rclone.conf file from another installation, select the entire text, and copy it.  Then, switch back to your terminal and use the terminal's \"paste\" menu option to paste it into the editor.  Press OK to continue."
+	msgbox
+	if [[ ${VALUE} = 0 ]]
+	then
+		mkdir -p ${RCLONEHOME}
+		${SELECTED_EDITOR} ${RCLONEHOME}/rclone.conf
+	else
+		quit
+	fi
+else
+	TITLE="Instructions"
+	DESC="After clicking OK, you will be taken to the rclone setup process.  Instructions for rclone can be found at https://rclone.org."
+	msgbox
+	if [[ ${VALUE} = 0 ]]
+	then
+		clear
+		rclone config
+		if [[ ! -f ${RCLONEHOME}/rclone.conf ]]
+		then
+			quit
+		fi
+	else
+		quit
+	fi
+fi
+
+# Choice
+
+declare -a ENDPOINT
+
+i=1
+j=1
+
+while read line
+do
+	ENDPOINT[ $i ]=$j
+	(( j++ ))
+	ENDPOINT[ ($i + 1) ]=$line
+	(( i=($i+2) ))
+done < <(grep "\[" ~/.config/rclone/rclone.conf | sort | sed 's/[][]//g')
+
+TERMINAL=$(tty)
+
+CHOICE=$(dialog --clear \
+	--backtitle "Rclone Setup" \
+	--title "Rclone Endpoints" \
+	--menu "Please select which entry from your rclone.conf corresponds to the cloud service you'd like to mount into OmniStream:" \
+	0 0 0 \
+	"${ENDPOINT[@]}" \
+	2>&1 >${TERMINAL})
+
+if [[ ${?} != 0 ]]
+then
+	echo Canceled
+	exit
+fi
+
+RCLONESERVICE=${ENDPOINT[ ${CHOICE}*2 ]}
+RCLONEMOUNT=${RCLONESERVICE}
+sed -i 's/.*RCLONESERVICE=.*/RCLONESERVICE='${RCLONESERVICE}'/' ~/.config/omnistream.conf
+sed -i 's/.*RCLONEMOUNT=.*/RCLONEMOUNT='${RCLONEMOUNT}'/' ~/.config/omnistream.conf
+
+# Create/update omnimount configuration
+
+mkdir -p ${CONFIGS}/omnimount
+cp ${RCLONEHOME}/rclone.conf ${CONFIGS}/omnimount/
+
+clear

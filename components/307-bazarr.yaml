@@ -1,0 +1,38 @@
+#
+# Bazarr - Subtitle management
+#
+  bazarr:
+    image: lscr.io/linuxserver/bazarr
+    container_name: ${BAZARRNAME}
+    hostname: ${BAZARRNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PGID=${GROUPID}
+      - PUID=${USERID}
+      - TZ=${TIMEZONE}
+    labels:
+      - "omni=${BAZARRNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.bazarr.rule=Host(`${BAZARRNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.bazarr.tls=true
+      - traefik.http.routers.bazarr.tls.certresolver=lets-encrypt
+      - traefik.http.services.bazarr.loadbalancer.server.port=6767
+      - traefik.http.routers.bazarr.middlewares=${AUTH}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIGS}/${BAZARRNAME}:/config
+      - ${MERGEMOUNT}:/cloud
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :6767 && mountpoint /cloud"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

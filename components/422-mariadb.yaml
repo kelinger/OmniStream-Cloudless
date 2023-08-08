@@ -1,0 +1,33 @@
+#
+# MariaDB:  MySQL-compatible relational database
+#
+  mariadb:
+    image: mariadb
+    container_name: ${MARIADBNAME}
+    hostname: ${MARIADBNAME}
+    restart: always
+    volumes:
+      - ${CONFIGS}/${MARIADBNAME}:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
+      - /bin/netstat:/bin/netstat:ro
+    networks:
+      - OmniNet
+    ports:
+      - target: 3306
+        published: 3306
+        protocol: tcp
+        mode: host
+    environment:
+      - MARIADB_ROOT_PASSWORD=secret123
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+    labels:
+      - "omni=${MARIADBNAME},${MYDOMAIN},yes,yes,no"
+      - autoheal=true
+      - traefik.enable=false
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -ntlp | grep :3306"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

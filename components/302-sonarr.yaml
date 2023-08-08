@@ -1,0 +1,41 @@
+#
+# Sonarr - TV Show catalog and management
+#
+  sonarr:
+    image: lscr.io/linuxserver/sonarr
+    container_name: ${SONARRNAME}
+    hostname: ${SONARRNAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+      omnimount:
+        condition: service_healthy
+    environment:
+      - PGID=${GROUPID}
+      - PUID=${USERID}
+      - TZ=${TIMEZONE}
+      - MEDIA=${MEDIA}
+    labels:
+      - "omni=${SONARRNAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.sonarr.rule=Host(`${SONARRNAME}.${MYDOMAIN}`)
+      - traefik.http.routers.sonarr.tls=true
+      - traefik.http.routers.sonarr.tls.certresolver=lets-encrypt
+      - traefik.http.services.sonarr.loadbalancer.server.port=8989
+      - traefik.http.routers.sonarr.middlewares=${AUTH}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${CONFIGS}/${SONARRNAME}:/config
+      - ${LOGS}:/config/logs
+      - ${MERGEMOUNT}:/cloud
+      - ${OMNIHOME}/healthchecks/sonarrcheck:/sonarrcheck
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "/sonarrcheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

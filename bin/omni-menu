@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+#	This progream sets up Omnistream for the current user.  It can also be used to edit or
+#	review the current settings and enable/disable Omnistream components.  The concept is
+#	to basically talk the user through some of the fine tuning processes to make Omnistream
+#	unique to their personal setup.
+#
+
+# Install any dependencies
+
+hash dialog 2>/dev/null || { echo Installing dialog \(one time\) ; sudo apt update > /dev/null ; sudo apt install dialog -y > /dev/null ; }
+
+# Set default values
+
+touch ${HOME}/.config/omnistream.conf
+source ${HOME}/.config/omnistream.conf
+${OMNIHOME}/bin/make-env rebuild
+source ${HOME}/.config/omnistream.conf
+source ${OMNIHOME}/bin/omni_functions
+
+
+# temporary file
+TEMP=/tmp/answer${$}
+
+get_text() {
+	dialog --title "${TITLE}" --clear --no-cancel --inputbox "${DESC}" 0 0 "${DEFAULT}" 2> ${TEMP}-Input
+	VALUE=$(cat ${TEMP}-Input)
+	rm ${TEMP}-Input
+}
+
+main_menu() {
+	CHOICE=0
+	while true; do
+		dialog \
+			--no-cancel \
+			--default-item ${CHOICE} \
+			--backtitle "OmniStream" \
+			--title "OmniStream Configurations and Utilities" \
+			--menu "Select an option:" 0 0 0 \
+			1 "Omni Control" \
+			2 "Omni Utilities" \
+			3 "Setups Menu" \
+			9 "Exit" 2>${TEMP}
+
+		CHOICE=$(cat ${TEMP})
+  		case ${CHOICE} in
+			1) omni-control;;
+			2) omni-utilities;;
+			3) setup-again;;
+			9 | "") rm -f ${TEMP}*
+				clear
+				exit;;
+		esac
+	done
+}
+
+main_menu
+clear

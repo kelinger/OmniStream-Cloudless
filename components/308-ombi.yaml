@@ -1,0 +1,38 @@
+#
+# Ombi - Content request and user management
+#
+  ombi:
+    restart: always
+    image: lscr.io/linuxserver/ombi
+    container_name: ${OMBINAME}
+    hostname: ${OMBINAME}
+    domainname: ${MYDOMAIN}
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+    environment:
+      - PUID=${USERID}
+      - PGID=${GROUPID}
+      - TZ=${TIMEZONE}
+      - UMASK_SET=022
+    labels:
+      - "omni=${OMBINAME},${MYDOMAIN},yes,yes,yes"
+      - autoheal=true
+      - traefik.enable=true
+      - traefik.http.routers.ombi.rule=Host(`${OMBINAME}.${MYDOMAIN}`)
+      - traefik.http.routers.ombi.tls=true
+      - traefik.http.routers.ombi.tls.certresolver=lets-encrypt
+      - traefik.http.services.ombi.loadbalancer.server.port=3579
+      - traefik.http.routers.ombi.middlewares=${AUTH}
+    volumes:
+      - ${CONFIGS}/${OMBINAME}:/config
+      - ${LOGS}:/config/logs
+      - ${OMNIHOME}/healthchecks/ombicheck:/ombicheck
+    networks:
+      - OmniNet
+    healthcheck:
+      test: ["CMD-SHELL", "/ombicheck"]
+      interval: 10s
+      timeout: 2s
+      retries: 3

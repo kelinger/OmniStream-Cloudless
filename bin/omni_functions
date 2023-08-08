@@ -1,0 +1,343 @@
+#!/bin/bash
+# shellcheck source=/dev/null
+
+OMNIHOME=${HOME}/OmniStream
+source ~/.config/omnistream.conf
+source "${OMNIHOME}"/bin/omni_complete
+SELECTED_EDITOR=nano
+source "${HOME}/.selected_editor"
+
+# Main OMNI function for OmniPlex
+
+omni() {
+	COMMAND=${1,,}
+	CURDIR=$(pwd)
+	case "${COMMAND}" in
+	up | start)
+		test -x ${OMNIHOME}/plugins/up-start && ${OMNIHOME}/plugins/up-start
+		cd "${OMNIHOME}" || exit
+		git pull
+		echo -n Rebuilding config file...
+		./bin/make-env rebuild
+		echo
+		"${OMNIHOME}"/bin/check-dns
+		[[ -f "${OMNIHOME}/enabled/221-deluge.yaml" ]] && touch ${LOGS}/deluged.log
+		/usr/local/bin/docker-compose -p omnistream up -d --remove-orphans "${@:2}"
+		cd "${CURDIR}" || exit
+		test -x ${OMNIHOME}/plugins/up-end && ${OMNIHOME}/plugins/up-end
+		;;
+	down | stop)
+		test -x ${OMNIHOME}/plugins/down-start && ${OMNIHOME}/plugins/down-start
+		cd "${OMNIHOME}" || exit
+		/usr/local/bin/docker-compose -p omnistream down "${@:2}"
+		echo
+		"${OMNIHOME}"/bin/del-dns
+		cd "${CURDIR}" || exit
+		test -x ${OMNIHOME}/plugins/down-end && ${OMNIHOME}/plugins/down-end
+		;;
+	version | v)
+		echo "OmniStream installed version from $(git -C $OMNIHOME log --pretty="format:%cr" -n1)"
+		;;
+	refresh | repair)
+		cd "${OMNIHOME}" || exit
+		git fetch
+		git reset --hard HEAD
+		git merge '@{u}'
+		cd "${CURDIR}" || exit
+		;;
+	edit)
+		${SELECTED_EDITOR} ${HOME}/.config/omnistream.conf
+		;;
+	status)
+		cd "${OMNIHOME}" || exit
+		/usr/local/bin/docker-compose -p omnistream ps "${@:2}"
+		cd "${CURDIR}" || exit
+		;;
+	stats)
+		docker stats "${@:2}" --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}"
+		;;
+	restart)
+		cd "${OMNIHOME}" || exit
+		/usr/local/bin/docker-compose -p omnistream restart "${@:2}"
+		cd "${CURDIR}" || exit
+		;;
+	services)
+		"${OMNIHOME}"/services
+		;;
+	setup)
+		"${OMNIHOME}"/bin/make-env "${@:2}"
+		;;
+	apps)
+		cd "${OMNIHOME}"/enabled || exit
+		ls
+		;;
+	bin)
+		cd "${OMNIHOME}"/bin || exit
+		ls
+		;;
+	media)
+		cd "${MEDIA}" || exit
+		ls
+		;;
+	configs)
+		cd "${CONFIGS}" || exit
+		ls
+		;;
+	home)
+		cd "${OMNIHOME}" || exit
+		ls
+		;;
+	menu)
+		"${OMNIHOME}/bin/omni-menu"
+		;;
+	dns)
+		"${OMNIHOME}/bin/dns-report-gen"
+		cat "${OMNIHOME}/dns-report"
+		;;
+	logs)
+		cd "${OMNIHOME}" || exit
+		/usr/local/bin/docker-compose -p omnistream logs -f "${@:2}"
+		cd "${CURDIR}" || exit
+		;;
+	mounts)
+		cd "${OMNIHOME}"/mnt || exit
+		ls
+		;;
+	components)
+		setup-components
+		;;
+	controls)
+		omni-controls
+		;;
+	utilities | utils)
+		omni-utilities
+		;;
+	rebuild)
+		cd "${OMNIHOME}" || exit
+		"${OMNIHOME}"/bin/make-env rebuild
+		echo
+		"${OMNIHOME}"/bin/check-dns
+		[[ -f "${OMNIHOME}/enabled/221-deluge.yaml" ]] && touch ${LOGS}/deluged.log
+		[[ $(find "${OMNIHOME}/enabled" -name "*transvpn.yaml") ]] && touch ${LOGS}/transmission.log
+		/usr/local/bin/docker-compose -p omnistream up --remove-orphans -d --build
+		docker exec -ti ${SABNZBDNAME} /config/extras.sh >/dev/null 2>&1
+		docker system prune -a -f --volumes
+		cd "${CURDIR}" || exit
+		;;
+	reload)
+		"${OMNIHOME}"/bin/omni_init
+		;;
+	update)
+		cd "${OMNIHOME}" || exit
+		echo Updating OmniStream from GIT
+		git pull > /dev/null 2>&1
+		echo Rebuilding OmniStream Docker stack configuration
+		"${OMNIHOME}"/bin/make-env rebuild > /dev/null 2>&1
+		echo Determining DNS assignments
+		"${OMNIHOME}"/bin/dns-report-gen > /dev/null 2>&1
+		echo
+		[[ -f "${OMNIHOME}/enabled/221-deluge.yaml" ]] && touch ${LOGS}/deluged.log
+		[[ $(find "${OMNIHOME}/enabled" -name "*transvpn.yaml") ]] && touch ${LOGS}/transmission.log
+		echo Updating Docker containers with latest versions
+		/usr/local/bin/docker-compose -p omnistream pull 
+		echo
+		echo Ensuring running environment matches latest versions and configs
+		/usr/local/bin/docker-compose -p omnistream up --remove-orphans --build -d
+		echo
+		echo Clearing leftovers
+		docker system prune -a -f --volumes
+		cd "${CURDIR}" || exit
+		;;
+	clean)
+		omni down
+		docker system prune -a -f --volumes
+		;;
+	pull)
+		cd "${OMNIHOME}" || exit
+		/usr/local/bin/docker-compose up -p omnistream --no-start
+		cd "${CURDIR}" || exit
+		;;
+	*)
+		echo ${YELLOW}"OmniStream commands:"
+		echo ${GREEN}"	omni up "${YELLOW}"- bring online all enabled OmniStream components"
+		echo ${GREEN}"	omni down "${YELLOW}"- shutdown all running OmniStream components"
+		echo ${GREEN}"	omni restart "${YELLOW}"- stops and restarts all or specific OmniStream compoments"
+		echo ${BLUE}"		Ex:  omni restart - restarts everything"
+		echo ${BLUE}"		Ex:  omni restart emby - just restarts emby"
+		echo ${GREEN}"	omni logs "${YELLOW}"- shows you logs for all or specific services, scrolling in realtime.  Press control-c to exit"
+		echo ${BLUE}"		Ex:  omni logs - shows logs for all services running"
+		echo ${BLUE}"		Ex:  omni logs plex emby - shows logs for just the plex and emby services"
+		echo ${GREEN}"	omni status "${YELLOW}"- show current state of running OmniStream components"
+		echo ${BLUE}"		Ex:  omni status - shows all running compoments"
+		echo ${BLUE}"		Ex:  omni status plex tautulli - shows status of plex and tautulli only"
+		echo ${GREEN}"	omni stats "${YELLOW}"- shows stats like CPU and memory usage by component.  Press control-c to exit"
+		echo ${BLUE}"		Ex:  omni stats - shows ongoing stats for all OmniStream components"
+		echo ${BLUE}"		Ex:  omni stats sonarr radarr - shows ongoing stats for just Sonarr and Radarr"
+		echo ${GREEN}"	omni setup "${YELLOW}"- builds (replaces) your OmniStream configuration.  Allows changing parameters"
+		echo ${GREEN}"	omni apps "${YELLOW}"- switches you to the components (enabled) local directory"
+		echo ${GREEN}"	omni configs "${YELLOW}"- switches you to the configs directory"
+		echo ${GREEN}"	omni home "${YELLOW}"- switches you to the OmniStream core files directory"
+		echo
+		echo "Documentation: https://www.omnistream.cloud/"
+		echo "Project page:  https://github.com/kelinger/OmniStream"
+		echo ${STD}
+		;;
+	esac
+}
+
+preload() {
+	SOURCE=${1}
+	source ~/.config/omnistream.conf
+	if [[ -z ${SOURCE} ]]; then
+		cd "${RCLONEMOUNT}"/Media || exit
+	else
+		SOURCEDIR=$(pwd)
+		SOURCE=${SOURCEDIR}/${SOURCE}
+		RELATIVEDIR=$(echo "${SOURCEDIR}" | sed 's|'"${RCLONEMOUNT}"'||')
+		TARGET=${UNSYNCED}/${RELATIVEDIR}
+		mkdir -p "${UNSYNCED}/${RELATIVEDIR}"
+		cp -Rv "${SOURCE}" "${TARGET}"
+	fi
+}
+
+function o+ {
+	CURDIR=$(pwd)
+	cd "${OMNIHOME}"/enabled || exit
+	source ${OMNIHOME}/bin/dns_functions
+	for i in "$@"; do
+		PARAM=${1}
+		if [[ -z ${PARAM} ]]; then
+			echo Currently enabled components:
+			ls
+			echo
+			echo Available components:
+			ls ../components/*.yaml
+		elif [[ -f ${OMNIHOME}/components/${PARAM} ]]; then
+			ln -sf ../components/"${PARAM}" "${PARAM}"
+			echo "${PARAM}": Enabled
+			if [[ ${ADD_DNS} = true ]]; then
+				LINE=$(cat ${OMNIHOME}/components/${PARAM} | grep "omni=" |cut -f2 -d'"' | cut -f2 -d'=')
+				HOST=$(echo ${LINE} | cut -f1 -d',')
+				if [[ "${HOST:0:1}" == "$" ]]; then
+					HOST=$(echo $(eval echo ${HOST}))
+				fi
+				DOMAIN=$(echo ${LINE} | cut -f2 -d',')
+				if [[ "${DOMAIN:0:1}" == "$" ]]; then
+					DOMAIN=$(echo $(eval echo ${DOMAIN}))
+				fi
+				ADD=$(echo ${LINE} | cut -f3 -d',')
+				ADD="${ADD^^}"
+				DEL=$(echo ${LINE} | cut -f4 -d',')
+				DEL="${DEL^^}"
+				CACHE=$(echo ${LINE} | cut -f5 -d',')
+				CACHE="${CACHE^^}"
+				FQDN=${HOST}.${DOMAIN}
+				RECORD=$(echo $ZONEDUMP | jq -r --arg FQDN "$FQDN" 'select(.name==$FQDN)')
+				RECORDID=$(echo $RECORD | jq '.id' |tr -d '"')
+				if [[ ${ADD} == "YES" ]]; then
+					if [[ -z "${RECORDID}" ]]; then
+						createrecord ${ZONEID} ${HOST} ${CACHE}
+						echo -n ${GREEN}"Created ${FQDN} "
+						if [[ ${CACHE} == "YES" ]]; then
+							echo "(cached)"${STD}
+						else
+							echo ${RED}"(uncached)"${STD}
+						fi
+					else
+						IP=$(echo $RECORD | jq '.content' |tr -d '"')
+						TYPE=$(echo $RECORD | jq '.type' |tr -d '"')
+						PROXIED=$(echo $RECORD | jq '.proxied' |tr -d '"')
+						CACHE2=false
+						if [[ ${CACHE} = "YES" ]]
+						then
+							CACHE2=true
+						fi
+						if [[ ${IP} != ${MYIP} ]] || [[ ${TYPE} != "A" ]] || [[ ${CACHE2} != ${PROXIED} ]]
+						then
+							updaterecord ${ZONEID} ${FQDN} ${RECORDID} ${CACHE2}
+							echo -n ${GREEN}"Updated ${FQDN} "
+							if [[ ${CACHE} == "YES" ]]; then
+								echo "(cached)"${STD}
+							else
+								echo ${RED}"(uncached)"${STD}
+							fi
+						fi
+					fi
+
+				fi
+
+			fi
+		else
+			echo Error: "${PARAM}" not found
+			echo
+			echo Please choose from the following components:
+			(cd ${OMNIHOME}/enabled && ls *.yaml)
+		fi
+		shift
+	done
+	cd "${CURDIR}" || exit
+	source "${OMNIHOME}"/bin/omni_complete
+}
+
+function o-() {
+	CURDIR=$(pwd)
+	source ${OMNIHOME}/bin/dns_functions
+	cd "${OMNIHOME}"/enabled || exit
+	for i in "$@"; do
+		PARAM=${1}
+		if [[ -z ${PARAM} ]]; then
+			echo Currently enabled components:
+			ls *.yaml
+		elif [[ -f ${OMNIHOME}/enabled/${PARAM} ]]; then
+			rm "${PARAM}"
+			echo "${PARAM}": Disabled
+			if [[ ${DELETE_DNS} = true ]]; then
+				LINE=$(cat ${OMNIHOME}/components/${PARAM} | grep "omni=" |cut -f2 -d'"' | cut -f2 -d'=')
+				HOST=$(echo ${LINE} | cut -f1 -d',')
+				if [[ "${HOST:0:1}" == "$" ]]; then
+					HOST=$(echo $(eval echo ${HOST}))
+				fi
+				DOMAIN=$(echo ${LINE} | cut -f2 -d',')
+				if [[ "${DOMAIN:0:1}" == "$" ]]; then
+					DOMAIN=$(echo $(eval echo ${DOMAIN}))
+				fi
+				ADD=$(echo ${LINE} | cut -f3 -d',')
+				ADD="${ADD^^}"
+				DEL=$(echo ${LINE} | cut -f4 -d',')
+				DEL="${DEL^^}"
+				CACHE=$(echo ${LINE} | cut -f5 -d',')
+				CACHE="${CACHE^^}"
+				FQDN=${HOST}.${MYDOMAIN}
+				RECORD=$(echo $ZONEDUMP | jq -r --arg FQDN "$FQDN" 'select(.name==$FQDN)')
+				RECORDID=$(echo $RECORD | jq '.id' |tr -d '"')
+				echo -n ${BLUE}
+				printf %-20s "${HOST}"
+				if [[ ${DEL} = "YES" ]]
+				then
+					if [[ -z ${RECORDID} ]]
+					then
+						echo ${YELLOW}"not registered"${STD}
+					else
+						deleterecord ${ZONEID} ${RECORDID}
+						echo ${GREEN}"Removed record ${RECORDID}"${STD}
+					fi
+				else
+					echo ${YELLOW}"skipped"${STD}
+				fi
+			fi
+		else
+			echo Error: "${PARAM}" not found
+			echo
+			echo Please choose from the following components:
+			(cd ${OMNIHOME}/enabled && ls *.yaml)
+		fi
+		shift
+	done
+	cd "${CURDIR}" || exit
+	source "${OMNIHOME}"/bin/omni_complete
+}
+
+O=${OMNIHOME}
+M=${MERGEMOUNT}/Media
+G=${MERGEMOUNT}
+D=${MERGEMOUNT}/Downloads

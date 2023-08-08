@@ -1,0 +1,5 @@
+#!/bin/bash
+
+source ${HOME}/.config/omnistream.conf
+
+rclone dedupe --dedupe-mode newest ${RCLONEMOUNT}:/$(basename ${MEDIA})/ -v

@@ -1,0 +1,338 @@
+#!/bin/bash
+
+# Detect previous installs
+
+VERSION=$(lsb_release -si)
+DOCKER=$(which docker > /dev/null ; echo ${?})
+COMPOSE=$(which docker-compose > /dev/null ; echo ${?})
+OMNIHOME=${HOME}/OmniStream
+OMNI=$(test -d ${OMNIHOME} ; echo ${?})
+source ~/.selected_editor > /dev/null 2>&1
+
+clear
+
+# Run as USER, not root/sudo
+
+if [[ $(id -u) = "0" ]]
+then
+	echo -n Checking for sudo...
+	hash sudo 2>/dev/null || { echo -n installing... ; apt update > /dev/null 2>&1; apt install sudo -y > /dev/null 2>&1; }
+	echo done
+	echo
+	echo Omni Setup needs to be run as a user, not root.  SUDO will be used for root-level access where applicable.
+	echo Would you like to create a user now?
+	read -p "Y for YES or Q to QUIT: " -n1 REPLY
+	echo
+	if [[ ${REPLY} =~ ^[Yy]$ ]]
+	then
+		read -e -p "Desired username: " PU
+		# Create user
+		adduser ${PU}
+		# Grant sudo
+		usermod -a -G sudo ${PU}
+		# Allow sudo without password
+		echo -e "${PU}\tALL=(ALL)\tNOPASSWD:ALL" > /etc/sudoers.d/${PU}
+		# Secure file
+		chmod 0440 /etc/sudoers.d/${PU}
+	fi
+	chmod 777 ${0}
+	echo
+	echo Login as your user and restart setup with ${0}
+	echo
+	exit 1
+fi
+
+if [[ ${SELECTED_EDITOR} = "" ]]
+then
+	echo You do not yet have a default editor.
+	/usr/bin/select-editor
+fi
+
+source ~/.selected_editor > /dev/null 2>&1
+
+sudo dpkg-reconfigure tzdata
+
+# Detect if Omni already installed
+
+if [[ ${OMNI} = 0 ]]
+then
+	omni stop 2>/dev/null
+	cd ${OMNIHOME}
+	git pull > /dev/null 2>&1
+	if [[ ${?} = 0 ]]
+	then
+		echo Omnistream already installed and up-to-date
+		echo
+	else
+		echo OmniStream appears to already be installed but appears to be different from the repo.
+		echo If you continue, OmniStream will be removed from your system completely and you will be
+		echo startig from scratch.  Do you want to remove the downloaded OmniStream and start fresh?
+		read -p "Y for YES or Q to QUIT: " -n1 REPLY
+		echo
+		if [[ ${REPLY} =~ ^[Yy]$ ]]
+		then
+			sudo rm -r ${OMNIHOME}
+			OMNI=1
+		else
+			exit 1
+		fi
+	fi
+fi
+
+# Install dependencies
+
+echo Installing/verifying dependencies...
+sudo apt update > /dev/null 2>&1
+APPLIST=" \
+	acl \
+	apache2-utils \
+	apt-transport-https \
+	at \
+	bc \
+	ca-certificates \
+	curl \
+	dialog \
+	dnsutils \
+	fuse \
+	git-core \
+	htop \
+	jq \
+	keychain \
+	net-tools \
+	parallel \
+	pigz \
+	pv \
+	python3-pip \
+	python3-venv \
+	rsync \
+	software-properties-common \
+	speedometer \
+	speedtest-cli \
+	sqlite3 \
+	unzip \
+	vnstat \
+	wget \
+	"
+for i in ${APPLIST}; do
+	echo -n "	"${i}...
+	sudo apt install -y ${i} > /dev/null 2>&1
+	if [[ ${?} = 0 ]]
+	then
+		echo Done
+	else
+		echo Failed!
+		exit 11
+	fi
+done
+
+python3 -m pip install --user pipx > /dev/null 2>&1
+python3 -m pipx ensurepath > /dev/null 2>&1
+
+# Clone OmniStream to HOME
+
+cd ~
+sudo mkdir -p OmniStream ${HOME}/.config
+sudo chown -R ${USER}:${USER} OmniStream ${HOME}/.config
+
+if [[ ${OMNI} = 0 ]]
+then
+	echo Skipping OmniStream download
+else
+	echo -n Grabbing OmniStream from GIT...
+	git clone https://github.com/kelinger/OmniStream.git > /dev/null 2>&1
+
+	if [[ ${?} = 0 ]]
+	then
+		echo Done
+	else
+		echo Download of OmniStream from GIT failed.  Please check ~\/OmniStream and remove any files leftover.
+		echo Then, simply rerun the setup.
+		echo
+		exit 12
+	fi
+	git config pull.rebase false
+fi
+
+# Install Docker
+
+if [[ ${DOCKER} = 0 ]]
+then
+	echo Skipping Docker installation
+else
+	echo -n Installing Docker...
+
+	curl -fsSL https://get.docker.com -o /tmp/get-docker.sh > /dev/null 2>&1
+	sudo sh /tmp/get-docker.sh 2>&1
+
+	while [[ ${?} -ne 0 ]]
+	do
+		echo -n download failed...waiting...
+		sleep 15
+		echo -n retrying...
+		curl -fsSL https://get.docker.com -o /tmp/get-docker.sh > /dev/null 2>&1
+		sudo sh /tmp/get-docker.sh > /dev/null 2>&1
+	done
+
+	if [[ ${?} = 0 ]]
+	then
+		echo Done
+	else
+		echo Failed!
+		exit 13
+	fi
+fi
+
+# Install Docker Compose
+
+if [[ ${COMPOSE} = 0 ]]
+then
+	echo Skipping Docker-Compose installation
+else
+	echo -n Installing Docker Compose...
+
+	cd /tmp
+	curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+	while [[ ${?} -ne 0 ]]
+	do
+		echo -n failed...waiting...
+		sleep 15
+		echo -n retrying...
+		curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url  | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi -
+	done
+
+	if [[ ${?} = 0 ]]
+	then
+		chmod +x docker-compose-linux-x86_64
+		sudo mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+		echo Done
+	else
+		echo Failed!
+		exit 14
+	fi
+fi
+
+# Allow current user to control Docker
+
+echo -n Granting Docker permissions to ${USER}...
+sudo usermod -aG docker ${USER} > /dev/null 2>&1
+sudo gpasswd -a ${USER} docker > /dev/null 2>&1
+sudo setfacl -m user:${USER}:rw /var/run/docker.sock > /dev/null 2>&1
+echo Done
+
+# Modify .bashrc
+
+echo -n Updating .bashrc...
+sed -zi '/source ~\/OmniStream\/bin\/omni_init/!s/$/\nsource ~\/OmniStream\/bin\/omni_init\n/' ~/.bashrc
+echo Done
+
+# Install services
+
+echo -n Setting up services...
+sudo systemctl start vnstat > /dev/null 2>&1
+sudo systemctl enable vnstat > /dev/null 2>&1
+sudo sed -i 's/^#user_allow_other/user_allow_other/g' /etc/fuse.conf
+${OMNIHOME}/bin/update-rclone current > /dev/null 2>&1
+docker network create \
+	--driver=bridge \
+	-o "com.docker.network.bridge.enable_ip_masquerade"="true" \
+	-o "com.docker.network.bridge.enable_icc"="true" \
+	-o "com.docker.network.driver.mtu"="1500" \
+	-o "com.docker.network.bridge.host_binding_ipv4"="0.0.0.0" \
+	OmniNet > /dev/null 2>&1
+cd /tmp
+wget https://github.com/harelba/q/releases/download/v3.1.6/q-text-as-data-3.1.6-1.x86_64.deb
+sudo dpkg -i q-text-as-data-3.1.6-1.x86_64.deb > /dev/null 2>&1
+echo Done
+
+# Make system Omni-ready
+
+echo Setting up Omni paths and functions
+pip3 install --upgrade pip > /dev/null 2>&1
+pip install --upgrade pip > /dev/null 2>&1
+mkdir -p ${OMNIHOME}/enabled ${OMNIHOME}/logs ~/OmniStream/configs ~/OmniStream/mnt
+source ${OMNIHOME}/bin/omni_init > /dev/null 2>&1
+o+ 001-header.yaml 003-omnimount.yaml 999-footer.yaml
+echo Done
+
+# Start setup menu for parameters and help
+
+echo
+${OMNIHOME}/bin/make-env
+${OMNIHOME}/bin/setup-rclone
+${OMNIHOME}/bin/setup-restore
+${OMNIHOME}/bin/setup-media
+${OMNIHOME}/bin/setup-advanced warn
+${OMNIHOME}/bin/setup-cron quiet
+${OMNIHOME}/bin/setup-traefik
+clear
+
+### Output results
+
+source ${OMNIHOME}/.env
+${OMNIHOME}/bin/dns-report-gen
+echo
+echo
+echo
+echo
+echo =========================================================================
+echo "         OmniStream initial setup complete.  Please review!"
+echo =========================================================================
+echo
+echo For a list of DNS entries needed, run:
+echo "	cat ${OMNIHOME}/dns-report"
+echo "	  or"
+echo "	omni dns"
+echo
+echo For installation report, run:
+echo "	cat ${OMNIHOME}/install-report"
+echo
+echo =========================================================================
+echo "  Please log out and back into your server for changes to take effect"
+echo "              or run \"source ~/OmniStream/bin/omni_init\""
+echo
+echo "Once you log back in, run the \"omni menu\" command to bring up options for"
+echo "    customization and starting your containers for the first time."
+echo =========================================================================
+
+REPORT=${OMNIHOME}/install-report
+echo Linux distribution is ${VERSION} > ${REPORT}
+docker -v >> ${REPORT}
+docker-compose -v >> ${REPORT}
+echo >> ${REPORT}
+echo Rclone: >> ${REPORT}
+update-rclone >> ${REPORT}
+echo >> ${REPORT}
+echo Rclone settings:  ${RCLONEHOME}/rclone.conf >> ${REPORT}
+echo >> ${REPORT}
+echo OmniStream Config Files:  ${CONFIGS} >> ${REPORT}
+echo Traefik URL:  ${TRAEFIKNAME}.${MYDOMAIN} >> ${REPORT}
+echo >> ${REPORT}
+if [[ ${DOCKER} = 0 ]] >> ${REPORT}
+then
+	echo Docker appears to already be installed.  Since there are multiple methods for installing Docker, >> ${REPORT}
+	echo the install script did not reinstall it.  Please make sure your Docker is up-to-date. >> ${REPORT}
+	echo >> ${REPORT}
+fi
+
+if [[ ${COMPOSE} = 0 ]]
+then
+	echo Docker-compose appears to already be installed.  Since there are multiple methods for installing >> ${REPORT}
+	echo docker-compose, the install script did not reinstall it.  Please make sure your installation >> ${REPORT}
+	echo of docker-compose is up-to-date. >> ${REPORT}
+	echo >> ${REPORT}
+fi
+if [[ ${OMNI} = 0 ]]
+then
+	echo OmniStream was already downloaded on this system.  It was checked and updated to the latest >> ${REPORT}
+	echo version, if applicable. >> ${REPORT}
+	echo >> ${REPORT}
+fi
+echo >> ${REPORT}
+echo Rclone can be configured via the \"rclone config\" command. >> ${REPORT}
+echo or by restoring your configuration to the file: >> ${REPORT}
+echo ${HOME}/.config/rclone/rclone.conf >> ${REPORT}
+echo >> ${REPORT}
+echo Cloud directory: "${MERGEMOUNT}" >> ${REPORT}
+echo Media directory: "${MEDIA}" >> ${REPORT}
+echo >> ${REPORT}
+echo Customizations are in ${HOME}/.config/omnistream.conf >> ${REPORT}

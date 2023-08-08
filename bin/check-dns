@@ -1,0 +1,74 @@
+#!/bin/bash
+source ~/.config/omnistream.conf
+source ${OMNIHOME}/bin/dns_functions
+
+######################################################
+#	Main Program
+######################################################
+
+if [[ ${ADD_DNS} == false ]]; then
+	echo DNS management is disabled.  No action performed.
+	exit 0
+fi
+
+${OMNIHOME}/bin/dns-report-gen
+cd ${OMNIHOME}/enabled
+
+echo Checking DNS entries for Omnistream components
+echo ==============================================
+for LINE in $(cat *.yaml |grep "omni=" |cut -f2 -d'"' | cut -f2 -d'='); do
+	HOST=$(echo ${LINE} | cut -f1 -d',')
+	if [[ "${HOST:0:1}" == "$" ]]; then
+		HOST=$(echo $(eval echo ${HOST}))
+	fi
+	DOMAIN=$(echo ${LINE} | cut -f2 -d',')
+	if [[ "${DOMAIN:0:1}" == "$" ]]; then
+		DOMAIN=$(echo $(eval echo ${DOMAIN}))
+	fi
+	ADD=$(echo ${LINE} | cut -f3 -d',')
+	ADD="${ADD^^}"
+	DEL=$(echo ${LINE} | cut -f4 -d',')
+	DEL="${DEL^^}"
+	CACHE=$(echo ${LINE} | cut -f5 -d',')
+	CACHE="${CACHE^^}"
+	FQDN="${HOST}.${DOMAIN}"
+	#RECORD=$(jq -r --arg FQDN "$FQDN" 'select(.name==$FQDN)' /tmp/zonedump )
+	RECORD=$(echo $ZONEDUMP | jq -r --arg FQDN "$FQDN" 'select(.name==$FQDN)')
+	RECORDID=$(echo $RECORD | jq '.id' |tr -d '"')
+	echo -n ${BLUE}
+	printf %-20s "${HOST}"
+	if [[ ${ADD} == "YES" ]]; then
+		if [[ -z "${RECORDID}" ]]; then
+			createrecord ${ZONEID} ${HOST} ${CACHE}
+			echo -n ${GREEN}"Created ${FQDN} "
+			if [[ ${CACHE} == "YES" ]] && [[ ${CF_CACHE} = true ]]; then
+				echo "(cached)"${STD}
+			else
+				echo ${RED}"(uncached)"${STD}
+			fi
+		else
+			IP=$(echo $RECORD | jq '.content' |tr -d '"')
+			TYPE=$(echo $RECORD | jq '.type' |tr -d '"')
+			PROXIED=$(echo $RECORD | jq '.proxied' |tr -d '"')
+			CACHE2=false
+			if [[ ${CACHE} = "YES" ]] && [[ ${CF_CACHE} = true ]]
+			then
+				CACHE2=true
+			fi
+			if [[ ${IP} != ${MYIP} ]] || [[ ${TYPE} != "A" ]] || [[ ${CACHE2} != ${PROXIED} ]]
+			then
+				updaterecord ${ZONEID} ${FQDN} ${RECORDID} ${CACHE2}
+				echo -n ${GREEN}"Updated ${FQDN} "
+				if [[ ${CACHE2} = true ]]; then
+					echo "(cached)"${STD}
+				else
+					echo ${RED}"(uncached)"${STD}
+				fi
+			else
+				echo ${YELLOW}"exists"${STD}
+			fi
+		fi
+	else
+		echo ${YELLOW}"skipped"${STD}
+	fi
+done
