@@ -1,0 +1,4 @@
+#!/bin/bash
+
+mkdir -p ${HOME}/OmniStream/mnt/Synology/Media
+sudo mount -t nfs 192.168.1.21:/volume1/OmniStream/Media ${HOME}/OmniStream/mnt/Synology/Media
