@@ -147,7 +147,7 @@ then
 fi
 
 clear
-echo Stopping all containers except \"omnimount\"
+echo Stopping all containers
 echo
 docker stop $(docker ps -q |grep -v $(docker ps -qf "name=omnimount"))
 if [[ ! -z ${SERVERTARGET} ]]

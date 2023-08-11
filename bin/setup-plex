@@ -68,7 +68,7 @@ then
 			2) clear
 				omni down
 				o- ${ENABLED}
-				o+ 001-header.yaml ${TR} 003-omnimount.yaml 101-plex.yaml 999-footer.yaml
+				o+ 001-header.yaml ${TR} 101-plex.yaml 999-footer.yaml
 				omni up
 				;;
 			3)  sed -i 's/.*PLEXCLAIM=.*/PLEXCLAIM=/' ~/.config/omnistream.conf

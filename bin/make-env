@@ -230,7 +230,5 @@ ln -sf ${ENV} ${OMNIHOME}/.env
 
 cat ${OMNIHOME}/enabled/???-* >${OMNIHOME}/docker-compose.yaml
 mkdir -p ${CONFIGS} ${DOWNLOADS} ${LOGS}
-sudo cp ${RCLONEHOME}/rclone.conf ${CONFIGS}/omnimount/
-sudo chown ${USERID}:${GROUPID} ${CONFIGS}/omnimount/rclone.conf
 
 echo Environment updated
